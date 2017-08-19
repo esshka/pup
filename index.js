@@ -22,25 +22,45 @@ const appRoot = path.resolve(__dirname);
     const page = await browser.newPage();
     await page.goto(url);
     const html = await page.evaluate(async tm => {
+      function waitForDOMReady() {
+        document.removeEventListener('DOMContentLoaded', onReady, true);
+        window.removeEventListener('load', onReady, true);
+      }
+
       function sleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
       }
+
       try {
+        document.onReadyToPrerender = new Promise(function(resolve) {
+          if (document.readyToPrerender === 'complete') {
+            resolve();
+          } else {
+            function checkReadyToPrerender() {
+              if (document.readyToPrerender === 'complete') {
+                return resolve();
+              }
+              setTimeout(checkReadyToPrerender, 50);
+            }
+          }
+        });
+
         document.ready = new Promise(function(resolve) {
           if (document.readyState === 'complete') {
             resolve();
           } else {
             function onReady() {
               resolve();
-              document.removeEventListener('DOMContentLoaded', onReady, true);
-              window.removeEventListener('load', onReady, true);
+              waitForDOMReady();
             }
-            document.addEventListener('DOMContentLoaded', onReady, true);
-            window.addEventListener('load', onReady, true);
+            waitForDOMReady();
           }
         });
         await document.ready;
-        await sleep(tm); //TODO custom hook based checking
+        if (document.readyToPrerender) {
+          await document.onReadyToPrerender;
+        }
+        await sleep(tm);
         return document.documentElement.outerHTML;
       } catch (err) {
         return `error when prerender url: ${err}`;
